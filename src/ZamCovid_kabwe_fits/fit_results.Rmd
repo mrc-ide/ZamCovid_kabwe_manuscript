@@ -1,0 +1,161 @@
+---
+title: "fit_results"
+output: html_document
+date: "2023-05-08"
+---
+
+```{r setup, include = FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Values for Epidemics poster
+
+At the peaks of the first, second and third waves infection incidence and reinfection rates were:
+```{r, echo = FALSE}
+sample <- dat$fit$samples$trajectories$state
+dates <- ZamCovid:::numeric_date_as_date(dat$fit$samples$trajectories$date)
+data <- rep(NA_real_, length(dates))
+
+inf_traj <- c( "infections_inc", "reinfections_inc")
+
+inf <- traj_to_long("infections_inc", 
+                    sample["infections_inc", ,], 
+                    dates, data)
+
+reinf <- traj_to_long("reinfections_inc", 
+                      sample["reinfections_inc", ,], 
+                      dates, data)
+
+wave_dates <- as.Date(c("2020-10-01", "2021-03-15", "2021-09-01"))
+wave_date_index <- which(inf$date %in% wave_dates[1:2])
+
+peak_dates <- c(
+  which.max(inf$mean[inf$date < wave_dates[1]]),
+  which.max(inf$mean[inf$date >= wave_dates[1] & inf$date < wave_dates[2]]) + wave_date_index[1],
+  which.max(inf$mean[inf$date >= wave_dates[2] & inf$date < wave_dates[3]]) + wave_date_index[2]
+)
+
+inf_peaks <- inf[peak_dates, ] %>%
+  mutate(infections = paste0(round(mean), " (95%CrI ", round(lb), " - ", round(ub), ")")) %>%
+  select(date, infections, mean_inf = mean, lb_inf = lb, ub_inf = ub)
+
+reinf_peaks <- reinf[peak_dates, ] %>%
+  select(date, mean_reinf = mean, lb_reinf = lb, ub_reinf = ub)
+
+peaks <- left_join(inf_peaks, reinf_peaks) %>%
+  mutate(reinf_mean = round((mean_reinf / mean_inf) * 100, 1),
+         reinf_lb = round((lb_reinf / lb_inf) * 100, 1),
+         reinf_ub = round((ub_reinf / ub_inf) * 100, 1)) %>%
+  mutate(reinf_pc = paste0(reinf_mean, " (", reinf_lb, "-", reinf_ub, ")")) %>%
+  select(date, infections, reinf_pc)
+
+peaks
+
+```
+
+The IFR changed from:
+```{r, echo = FALSE}
+p_G_D <- as.numeric(dat$fit$samples$pars[, "p_G_D"])
+
+
+ifr <- get_severity(dat$fit$severity, "ifr")
+ifr_dates <- as.Date(c("2020-08-15", "2020-12-01", "2021-03-15", "2021-05-01"))
+ifr_names <- c("baseline", "mu_D_1 start", "mu_D_1 end", "mu_D_2 start")
+
+ifr <- ifr[ifr$date %in% ifr_dates, ] %>%
+  mutate(value = paste0(round(mean * 100, 2), " (95%CrI ",
+                        round(lb * 100, 2), " to ", round(ub * 100, 2), ")")) %>%
+  select(date, value)
+
+ifr$name <- ifr_names
+
+
+
+ifr
+```
+
+## Fitted trajectories
+
+
+```{r, echo = FALSE, fig.width = 10}
+print(paste0(ifelse(deterministic, "Deterministic", "Stochastic"),
+             " model ran with assumptions: ", assumptions))
+
+if (assumptions == "fit_no_deaths") {
+  plot <- plot_serology(dat)
+} else {
+  plot <- plot_serology(dat) +
+    plot_deaths(dat)
+}
+
+plot
+
+```
+
+
+## Inferred transmissibility and severity
+
+
+```{r, echo = FALSE, fig.width = 10}
+plot_rt(dat) / plot_severity(dat, FALSE, "2020-03-15")
+```
+
+
+```{r, echo = FALSE, fig.width = 10}
+S_classes <- paste0("S_", seq(0, 75, 5))
+N_total <- pars$base$population %>%
+  mutate(age = S_classes)
+
+susceptible <- NULL
+dead <- NULL
+for(i in S_classes) {
+  n <- N_total$n[N_total$age == i]
+  tmp <- summarise_trajectory(dat$fit$samples, i) %>%
+    mutate_if(is.numeric, list(~ . / n))
+  
+  susceptible <- rbind(susceptible, tmp)
+  
+  tmp <- summarise_trajectory(dat$fit$samples, gsub("S", "D", i)) %>%
+    mutate_if(is.numeric, list(~ . / n))
+  
+  dead <- rbind(dead, tmp)
+}
+
+S <- ggplot(susceptible, aes(date)) +
+  geom_line(aes(y = mean, col = state), linetype = 2, linewidth = 0.4) +
+  geom_ribbon(aes(ymin = lb, ymax = ub, fill = state), alpha = 0.1) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  labs(x = "", y = "Susceptible (% population)") +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b-%y") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.line = element_line(),
+        axis.text.x = element_text(angle = 45, vjust = 0.7),
+        legend.title = element_blank())
+
+D <- ggplot(dead, aes(date)) +
+  geom_line(aes(y = mean, col = state), linetype = 2, linewidth = 0.4) +
+  geom_ribbon(aes(ymin = lb, ymax = ub, fill = state), alpha = 0.1) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  labs(x = "", y = "Cumulative deaths (% population)") +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b-%y") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.line = element_line(),
+        axis.text.x = element_text(angle = 45, vjust = 0.7),
+        legend.title = element_blank())
+
+S + D
+```
+
+
+## Convergence diagnostics
+
+```{r, echo = FALSE}
+
+print(get_convergence_diagnostic(dat))
+```

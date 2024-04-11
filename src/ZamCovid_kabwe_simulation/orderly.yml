@@ -1,0 +1,67 @@
+script: script.R
+
+parameters:
+    n_par: ~
+    region:
+      default: "kabwe"
+    fit_date:
+      default: "2021-09-30"
+    fit_short_run:
+      default: true
+    fit_assumptions:
+      default: "central"
+
+artefacts:
+  - data:
+      description: simulation outputs
+      filenames:
+        - paper_numbers.html
+        - simulation_results.rds
+  - staticgraph:
+      description: simulation plots
+      filenames:
+        - plots/figure_2.png
+        - plots/figure_3.png
+        - plots/si_inf_averted.png
+        - plots/si_vacc_ifr.png
+        - plots/si_vacc_Rt.png
+        - plots/si_vacc_infections.png
+        - plots/si_vacc_deaths.png
+        - plots/si_vacc_prop_vaccinated.png
+        - plots/si_vacc_prop_immune.png
+        - plots/si_health_ifr.png
+        - plots/si_health_Rt.png
+        - plots/si_health_infections.png
+        - plots/si_health_deaths.png
+        - plots/si_health_prop_immune.png
+
+global_resources:
+  util.R: util.R
+  
+sources:
+  - R/simulate_vaccination.R
+  - R/plot.R
+  - R/support.R
+
+resources:
+  - inputs/rt_scenarios.csv
+  - inputs/schools_schedule.csv
+  - inputs/owid-covid-data.csv
+  - paper_numbers.Rmd
+
+packages:
+  - ZamCovid
+  - dplyr
+  - tidyr
+  - ggplot2
+  - patchwork
+  - stringr
+  
+depends:
+  - ZamCovid_kabwe_fits:
+      id: latest(parameter:assumptions == fit_assumptions && parameter:deterministic == FALSE && parameter:short_run == fit_short_run)
+      use:
+         inputs/fits.rds: outputs/fit.rds
+
+requester: ZamCovid
+author: Pablo

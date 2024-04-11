@@ -1,0 +1,49 @@
+script: script.R
+
+parameters:
+  deterministic:
+    default: false
+  assumptions:
+    default: "central"
+  
+artefacts:
+  - data:
+      description: fitted hyperparameters for priors
+      filenames:
+        - parameters_base.rds
+        - parameters_info.csv
+        - parameters_prior.csv
+        - parameters_proposal.csv
+        - parameters_transform.R
+
+packages:
+  - ZamCovid
+  - tidyr
+  - dplyr
+  - forcats
+  - magrittr
+  - jtools
+  - ggplot2
+  - patchwork
+
+sources:
+  - R/support.R
+  - R/priors.R
+  - R/baseline.R
+  - R/transform.R
+  - R/vaccine.R
+  
+global_resources:
+  util.R: util.R
+
+resources:
+  - pars
+  - data/vaccine_efficacy.csv
+  - data/vaccine_uptake.csv
+  - data/support_severity.csv
+  - data/population.csv
+  - data/progression_data.csv
+  - data/baseline_deaths.csv
+
+requester: ZamCovid
+author: ZamCovid

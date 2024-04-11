@@ -1,0 +1,2 @@
+scenario,event,date,strain,rt_type,trend,method,value,sigma
+Fixed,start,,both,rt,regional,scaled,1,0.2

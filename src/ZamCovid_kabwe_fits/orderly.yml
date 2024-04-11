@@ -1,0 +1,65 @@
+script: script.R
+
+parameters:
+    deterministic:
+      default: false
+    short_run:
+      default: false
+    assumptions:
+      default: "central"
+
+artefacts:
+  - data:
+      description: summarised fit results
+      filenames:
+        - fit_results.html
+  - staticgraph:
+      description: pMCMC trace plots and fitted trajectories
+      filenames:
+        - plots/si_pmcmc_traceplots.png
+        - plots/si_fits_serology.png
+        - plots/si_fits_deaths.png
+        - plots/figure_1.png
+        - plots/si_forest_betas.png
+        - plots/si_forest_non_betas.png
+  - data:
+      description: PMCMC results for analysis
+      filenames:
+        - outputs/fit.rds
+        - outputs/info.csv
+        - outputs/proposal.csv
+
+global_resources:
+  util.R: util.R
+
+sources:
+  - support.R
+  - fit_process.R
+  - plot.R
+
+resources:
+  - fit_results.Rmd
+  
+packages:
+  - ZamCovid
+  - dplyr
+  - tidyr
+  - ggplot2
+  - patchwork
+
+depends:
+  ZamCovid_kabwe_data:
+    id: latest
+    use:
+      data/data_timeseries.csv: data_timeseries.csv
+  ZamCovid_kabwe_parameters:
+    id: latest(parameter:assumptions == assumptions && deterministic == deterministic)
+    use:
+      inputs/base.rds: parameters_base.rds
+      inputs/info.csv: parameters_info.csv
+      inputs/prior.csv: parameters_prior.csv
+      inputs/proposal.csv: parameters_proposal.csv
+      inputs/transform.R: parameters_transform.R
+
+requester: ZamCovid
+author: Pablo

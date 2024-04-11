@@ -1,0 +1,16 @@
+script: script.R
+
+artefacts:
+  - data:
+      description: Data to fit the model
+      filenames:
+        - data_timeseries.csv
+
+global_resources:
+  util.R: util.R
+
+resources:
+  - data_timeseries.csv
+
+requester: ZamCovid
+author: ZamCovid

@@ -1,0 +1,223 @@
+---
+title: "Results for manuscript"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width = 80)
+
+### This R chunk will get model trajectories and pre-process other object with
+### interesting model outputs
+# Vector of dates of modelled period
+dates_vect <- as.Date(fits_real$fitted$date_string)
+N_tot <- sum(pars[[1]][[1]]$N_tot)
+
+# Key dates eff_Rt (mean of trajectory) went below/above 1
+eff_rt <- data.frame(
+  date = dates_vect,
+  eff_rt = rowMeans(fits_real$eff_Rt_general[-1L, 1, ]))
+
+key_dates <- data.frame(
+  date = c(
+    # eff_rt first < 1 with NPIs
+    dates_vect[min(which(eff_rt$eff_rt[
+      eff_rt$date <= as.Date("2020-07-15")] < 1))],
+    
+    # Sustained transmission afert 1st wave begins
+    min(eff_rt$date[which(eff_rt$eff_rt > 1)][
+      eff_rt$date[which(eff_rt$eff_rt > 1)] > as.Date("2020-10-01")]),
+    
+    # eff_rt< 1 post-2nd wave
+    min(eff_rt$date[which(eff_rt$eff_rt < 1)][
+      eff_rt$date[which(eff_rt$eff_rt < 1)] > as.Date("2021-01-15") &
+        eff_rt$date[which(eff_rt$eff_rt < 1)] < as.Date("2021-02-15")]),
+    
+    # eff_rt>1 into 3rd wave
+    min(eff_rt$date[which(eff_rt$eff_rt > 1)][
+      eff_rt$date[which(eff_rt$eff_rt > 1)] > as.Date("2021-03-01")]),
+    
+    # eff_rt>1 out of 3rd wave
+    max(eff_rt$date[which(eff_rt$eff_rt > 1)][
+      eff_rt$date[which(eff_rt$eff_rt > 1)] > as.Date("2021-03-01") &
+        eff_rt$date[which(eff_rt$eff_rt > 1)] < as.Date("2021-07-15")]),
+    
+    # Restart dates
+    unique(date_start),
+    
+    # Model ends
+    as.Date(date_end)
+    ),
+  
+  event = c(
+    "NPIs drive $R_t^{eff}$<1",
+    "Sustained $R_t^{eff}$>1 post-1st wave",
+    "$R_t^{eff}$<1 post-2nd wave",
+    "$R_t^{eff}$>1 into 3rd wave",
+    "$R_t^{eff}$>1 out of 3rd wave",
+    
+    "100-days mission/Pre-1st wave",
+    "HIC vaccine roll-out",
+    "Zambia vaccine roll-out",
+    "Dex approved",
+    "Pre-2nd wave",
+    "Pre-3rd wave",
+    "End date"
+  )) %>%
+  arrange(date)
+
+
+df_immunity <- get_immunity_levels(fits_real, res, pars) %>%
+  # filter(state != "Inf. immunity (fitted)") %>%
+  mutate_if(is.numeric, ~round(. * 100))
+
+```
+
+
+## Factual levels of cumulative infected and effective immunity
+```{r, echo = FALSE}
+### Table option 1 ----
+
+immunity_factual <- traj_to_long("Fitted",
+                                 fits_real$state["immune_R_unvacc", , -1L],
+                                 dates_vect, rep(NA_real_, length(dates_vect))) %>%
+  select(!data) %>%
+  mutate_if(is.numeric, ~round((. / N_tot) * 100)) %>%
+  mutate(Immune = paste0(mean, "% (", lb,"-", ub, ")")) %>%
+  select(date, Immune)
+
+cum_inf_factual <- get_cum_inf(fits_real, res, pars, fits_prepared$index,
+                                factual_only = TRUE) %>%
+  traj_to_long("Cum. infected", ., dates_vect, rep(NA_real_, length(dates_vect))) %>%
+  select(!data) %>%
+  mutate_if(is.numeric, ~round((. / N_tot) * 100)) %>%
+  mutate(value = paste0(mean, "% (", lb,"-", ub, ")")) %>%
+  select(date, Infected = value) %>%
+  left_join(., immunity_factual) %>%
+  left_join(key_dates, .)
+
+print(cum_inf_factual)
+
+print(Hmisc::latex(cum_inf_factual, file = ""))
+
+```
+
+
+## Factual effective IF trajectory
+
+```{r, echo = FALSE}
+all_deaths <- fits_real$state["deaths_all_inc", , -1L] %>%
+  traj_to_long("Deaths", ., dates_vect, rep(NA_real_, length(dates_vect))) %>%
+  select(!data)
+deaths_peak <-
+  c(all_deaths$date[
+    which.max(all_deaths$mean[all_deaths$date < as.Date("2020-09-01")])],
+    all_deaths$date[
+    which.max(all_deaths$mean[all_deaths$date < as.Date("2021-05-01")])],
+    all_deaths$date[
+    which.max(all_deaths$mean)]
+  )
+
+ifr_dates <- data.frame(
+  date = c(as.Date(c("2020-08-15", "2020-12-01", "2021-03-15", "2021-05-01")),
+           deaths_peak),
+  event = c("Baseline", "Start $mu_D_1$", "End $mu_D_1$", "Start $mu_D_2$",
+            paste(c("1st", "2nd", "3rd"), "wave peak")))
+
+ifr <- data.frame(date = dates_vect,
+                  mean = rowMeans(fits_real$ifr[-1L, ]),
+                  lb = matrixStats::rowQuantiles(fits_real$ifr[-1L, ], probs = 0.025),
+                  ub = matrixStats::rowQuantiles(fits_real$ifr[-1L, ], probs = 0.975)) %>%
+  mutate_if(is.numeric, ~round(. * 100, 2)) %>%
+  mutate(IFR = paste0(mean, "% (", lb,"-", ub, ")")) %>%
+  select(date, IFR) %>%
+  left_join(ifr_dates, ., by = "date")
+
+print(ifr)
+
+print(Hmisc::latex(ifr, file = ""))
+```
+
+## Deaths averted with counterfactual interventions
+
+```{r, echo = FALSE}
+sim_vacc <- grep("factual", names(res)[1:15], invert = TRUE, value = TRUE)
+sim_health <- names(res)[16:24]
+sample <- fits_prepared$index
+N_tot <- sum(fits_prepared$base$population$n)
+
+to_par_df <- function(x, s, r = 1e5) {
+  x <- as.data.frame(x[, ncol(x)]) %>%
+    `colnames<-`("value") %>%
+    mutate(scenario = s) %>%
+    select(scenario, value)
+  
+  x %>%
+    group_by(scenario) %>%
+    mutate(mean = round(mean(value)),
+           lb = round(quantile(value, 0.025)),
+           ub = round(quantile(value, 0.975))) %>%
+    select(!value) %>%
+    slice(1) %>%
+    mutate(mean_rate = round((mean / N_tot) * r, 1),
+           lb_rate = round((lb / N_tot) * r, 1),
+           ub_rate = round((ub / N_tot) * r, 1))
+}
+
+deaths <- as.data.frame(fits_real$state["deaths_cum_hosp", sample, -1L] +
+      fits_real$state["deaths_cum_comm", sample, -1L]) %>%
+  to_par_df(., "Factual")
+infections <- as.data.frame(fits_real$state["inf_cum_all", sample, -1L]) %>%
+  to_par_df(., "Factual", 1)
+
+for (i in c(sim_vacc, sim_health)) {
+  tmp <- res[[i]]
+
+  tmp_death <- tmp$state["deaths_cum_hosp", , ] + tmp$state["deaths_cum_comm", , ]
+  tmp_inf <- tmp$state["inf_cum_all", , ]
+  
+  tmp_death <- to_par_df(tmp_death, i)
+  tmp_inf <- to_par_df(tmp_inf, i)
+  
+  deaths <- rbind(deaths, tmp_death)
+  infections <- rbind(infections, tmp_inf)
+}
+
+to_out_df <- function(x) {
+  mf <- x[x$scenario == "Factual", "mean"]
+  lf <- x[x$scenario == "Factual", "lb"]
+  uf <- x[x$scenario == "Factual", "ub"]
+  
+  x <- x %>%
+    mutate(mean_av = round((1 - (mean / mf)) * 100),
+           ub_av = round((1 - (lb / lf)) * 100),
+           lb_av = round((1 - (ub / uf)) * 100)) %>%
+    mutate(total = paste0(mean, " (", lb, "-", ub, ")"),
+           rate = paste0(mean_rate, " (", lb_rate, "-", ub_rate, ")"),
+           averted = paste0(mean_av, " (", lb_av, "-", ub_av, ")")) %>%
+    select(scenario, total, rate, averted)
+  
+  y <- x %>%
+    vacc_scenario_labels(.) %>%
+    filter(!is.na(scen_start) || scenario == "Factual")
+  
+  x <- x %>%
+    health_scenario_labels(.) %>%
+    filter(!is.na(scen_start) || scenario == "Factual")
+  
+  rbind(x, y) %>% distinct()
+}
+
+deaths <- to_out_df(deaths)
+infections <- to_out_df(infections)
+  
+rmarkdown::paged_table(deaths, options = list(rows.print = 22))
+print(Hmisc::latex(deaths, file = ""))
+```
+
+## Infections averted with counterfactual interventions
+
+```{r, echo = FALSE}
+rmarkdown::paged_table(infections, options = list(rows.print = 22))
+print(Hmisc::latex(infections, file = ""))
+```
